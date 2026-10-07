@@ -1,13 +1,13 @@
 # Práctica 1 · Cifrado César y rotura automática
 
-Dos programas en C para Linux:
+Dos programas en **C** para **Linux**:
 
-| Programa      | Qué hace                                                        |
-|---------------|-----------------------------------------------------------------|
-| `caesar`      | Cifra con César el texto de la entrada estándar.                |
-| `breakcaesar` | Rompe por fuerza bruta un texto cifrado con César.              |
+| Programa      | Qué hace                                                              |
+|---------------|-----------------------------------------------------------------------|
+| `caesar`      | **Cifra** con César el texto de la `entrada estándar`.                |
+| `breakcaesar` | **Rompe por fuerza bruta** un texto cifrado con César.                |
 
-Solo usan la biblioteca estándar y llamadas POSIX, así que compilan en el laboratorio sin instalar nada.
+Solo usan la **biblioteca estándar** y llamadas **POSIX** (`read`, `write`, `open`, `lseek`), así que compilan en el laboratorio **sin instalar nada**.
 
 ```
 caesar/
@@ -31,7 +31,7 @@ gcc -g -o breakcaesar breakcaesar.o -lm
 cd ..
 ```
 
-> `breakcaesar` necesita `-lm` porque usa `pow()` y `sqrt()`.
+> **Importante:** `breakcaesar` necesita el flag `-lm` porque usa `pow()` y `sqrt()` de `math.h`.
 
 ---
 
@@ -43,7 +43,7 @@ cd ..
 ./build/caesar key
 ```
 
-`key` es un número entero (la clave de desplazamiento).
+`key` es un **número entero**: la **clave de desplazamiento**.
 
 ### Ejemplo
 
@@ -52,21 +52,21 @@ $ echo 'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG' | ./build/caesar 23
 QEB NRFZH YOLTK CLU GRJMP LSBO QEB IXWV ALD
 ```
 
-El programa lee el texto en claro de la entrada estándar y escribe el cifrado en la salida estándar. Se puede escribir a mano y terminar con `Ctrl+D`, o usar una tubería o un fichero.
+El programa lee el **texto en claro** de la `entrada estándar` y escribe el **texto cifrado** en la `salida estándar`. Se puede escribir a mano y terminar con `Ctrl+D`, o usar una **tubería** (`|`) o una **redirección** (`<`).
 
-- Las minúsculas se pasan a mayúsculas antes de cifrar.
-- Cada letra `A-Z` se desplaza `key` posiciones, módulo 26.
-- Los caracteres que no son letras se copian sin cambios.
+- Las **minúsculas** se pasan a **mayúsculas** antes de cifrar.
+- Cada letra `A-Z` se desplaza `key` posiciones, **módulo 26**.
+- Los caracteres que **no son letras** (espacios, signos, `\n`) se copian **sin cambios**.
 
 ### Errores de uso
 
-Si no se pasa exactamente un argumento, o no es numérico:
+Si no se pasa **exactamente un argumento**, o el argumento **no es numérico**, muestra:
 
 ```
 Usage: ./caesar key
 ```
 
-y termina con código de salida distinto de 0.
+y termina con `EXIT_FAILURE` (código de salida distinto de `0`).
 
 ---
 
@@ -112,48 +112,48 @@ THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG
 └──────────────────────┘
 ```
 
-**1. Lectura.** Lee la entrada en bloques de 8192 bytes, así que funciona con ficheros grandes. En una sola pasada cuenta cada letra, cada digrama y cada trigrama. Los caracteres que no son letras se ignoran, y un espacio en blanco corta la secuencia para no contar digramas ni trigramas entre palabras distintas. A la vez guarda el texto en `temp_file` para generar después los descifrados.
+**1. Lectura.** Lee la `entrada estándar` en **bloques de 8192 bytes** (`BUFFER_SIZE`), así que funciona con **ficheros grandes**. En **una sola pasada** cuenta cada **letra** (`c1`), cada **digrama** (`c2`) y cada **trigrama** (`c3`). Los caracteres que **no son letras se ignoran**, y un **espacio en blanco corta la secuencia** para no contar digramas ni trigramas entre palabras distintas. A la vez guarda el texto en `temp_file` para generar después los descifrados.
 
-**2. Prueba de claves.** Para cada clave del 1 al 25 calcula tres indicadores a partir de las cuentas ya hechas, sin volver a recorrer el texto:
+**2. Prueba de claves.** Para cada clave **del 1 al 25** calcula tres indicadores en la función `score()`, a partir de las cuentas ya hechas, **sin volver a recorrer el texto**:
 
-| Indicador | Qué mide | Gana |
-|-----------|----------|------|
-| Distancia | Distancia euclídea entre las frecuencias del texto descifrado y las del inglés (tanto por uno) | La **menor** |
-| Digramas  | Apariciones de los 28 digramas más comunes del inglés | La **mayor** |
-| Trigramas | Apariciones de los 16 trigramas más comunes del inglés | La **mayor** |
+| Indicador     | Qué mide | Gana |
+|---------------|----------|------|
+| **Distancia** | **Distancia euclídea** entre las frecuencias del texto descifrado y las del inglés (tanto por uno) | La **menor** |
+| **Digramas**  | Apariciones de los **28 digramas** más comunes del inglés (`TH`, `HE`, `IN`…) | La **mayor** |
+| **Trigramas** | Apariciones de los **16 trigramas** más comunes del inglés (`THE`, `AND`, `ING`…) | La **mayor** |
 
-En caso de empate en un indicador, gana la primera clave encontrada.
+> En caso de **empate** en un indicador, gana la **primera clave encontrada**.
 
 **3. Candidatos.**
 
 | Situación | Candidatos | Orden |
 |-----------|------------|-------|
-| Los tres indicadores coinciden | 1 | — |
-| Coinciden dos | 2 | Primero el que gana en dos |
-| Ninguno coincide | 3 | Distancia, digramas, trigramas |
+| Los **tres** indicadores coinciden | **1** | — |
+| Coinciden **dos** | **2** | Primero el que **gana en dos** |
+| **Ninguno** coincide | **3** | `distancia` → `digramas` → `trigramas` |
 
 ### Salida
 
-Por cada candidato, una línea con el formato:
+Por cada candidato, una línea en la `salida estándar` con el formato:
 
 ```
 clave: distancia, digramas, trigramas
 ```
 
-y un fichero `key-<clave>.txt` en el directorio de trabajo con el texto descifrado (los caracteres que no son letras se conservan).
+y un fichero `key-<clave>.txt` en el **directorio de trabajo** con el **texto descifrado** (los caracteres que no son letras se conservan).
 
-> El fichero auxiliar `temp_file` queda en el directorio de trabajo y puede borrarse tras la ejecución.
+> **Nota:** el fichero auxiliar `temp_file` queda en el directorio de trabajo y **puede borrarse** tras la ejecución.
 
 ---
 
 ## 3. Pruebas con *The Adventures of Sherlock Holmes*
 
-Los ficheros de prueba están en el directorio padre (`P1/`):
+Los ficheros de prueba están en el **directorio padre** (`P1/`):
 
 | Fichero | Contenido |
 |---------|-----------|
-| `adventures_sherlock_holmes_onlylettersandblanks.txt` | Texto en claro |
-| `adventures_sherlock_holmes_onlylettersandblanks_encrypted.txt` | Texto cifrado |
+| `adventures_sherlock_holmes_onlylettersandblanks.txt` | **Texto en claro** |
+| `adventures_sherlock_holmes_onlylettersandblanks_encrypted.txt` | **Texto cifrado** |
 
 ### Romper el texto cifrado
 
@@ -162,18 +162,11 @@ $ time ./build/breakcaesar < ../adventures_sherlock_holmes_onlylettersandblanks_
 15: 0.011568, 116432, 21464
 ```
 
-Los tres indicadores coinciden en la clave **15**, así que solo hay un candidato y se genera `key-15.txt`.
-
-### Comprobar que el descifrado es correcto
-
-```bash
-$ tr 'a-z' 'A-Z' < ../adventures_sherlock_holmes_onlylettersandblanks.txt | diff - key-15.txt && echo "OK: descifrado idéntico"
-OK: descifrado idéntico
-```
+Los **tres indicadores coinciden** en la clave **`15`**, así que solo hay **un candidato** y se genera `key-15.txt`.
 
 ### Ciclo completo: cifrar y romper
 
-Cifrar el libro con cualquier clave y comprobar que `breakcaesar` la encuentra:
+Cifrar el libro con **cualquier clave** y comprobar que `breakcaesar` la **encuentra**:
 
 ```bash
 $ ./build/caesar 7 < ../adventures_sherlock_holmes_onlylettersandblanks.txt | ./build/breakcaesar
@@ -182,7 +175,7 @@ $ ./build/caesar 7 < ../adventures_sherlock_holmes_onlylettersandblanks.txt | ./
 
 ### ¿Cuándo falla? Textos cortos
 
-Con pocos caracteres las estadísticas no son fiables y los indicadores dejan de coincidir:
+Con **pocos caracteres** las estadísticas **no son fiables** y los indicadores dejan de coincidir:
 
 ```bash
 $ head -c 100 ../adventures_sherlock_holmes_onlylettersandblanks_encrypted.txt | ./build/breakcaesar
@@ -190,4 +183,4 @@ $ head -c 500 ../adventures_sherlock_holmes_onlylettersandblanks_encrypted.txt |
 $ head -c 2000 ../adventures_sherlock_holmes_onlylettersandblanks_encrypted.txt | ./build/breakcaesar
 ```
 
-Cuanto más largo es el texto, antes coinciden los tres indicadores en la clave correcta.
+> **Conclusión:** cuanto **más largo** es el texto, antes coinciden los **tres indicadores** en la **clave correcta**.
