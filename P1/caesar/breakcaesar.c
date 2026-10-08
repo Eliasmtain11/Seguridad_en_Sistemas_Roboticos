@@ -11,27 +11,25 @@ enum {
 	ALPHABET_LENGHT = LAST_CHAR - FIRST_CHAR + 1,
 	NUM_DIGRAMS = 28,
 	NUM_TRIGRAMS = 16,
-	BLOCK_SIZE = 8192,
+	MAX_TEXT = 32 * 1024 * 1024,
 	BUFFER_SIZE = 8192
 };
 
-struct Counts {
+/* Resultados de descifrar con una clave concreta. */
+struct Count {
 	long long len;
-	long long c1[ALPHABET_LENGHT];
-	long long c2[ALPHABET_LENGHT][ALPHABET_LENGHT];
-	long long c3[ALPHABET_LENGHT][ALPHABET_LENGHT][ALPHABET_LENGHT];
-};
-
-struct Score {
-	double dist;
+	long long freq[ALPHABET_LENGHT];
 	long long dig;
 	long long tri;
+	double dist;
 };
 
-typedef struct Score Score;
-typedef struct Counts Counts;
+typedef struct Count Count;
 
-static Counts counts;
+/* Un texto descifrado por clave (26 x 32 MB). */
+static char text[ALPHABET_LENGHT][MAX_TEXT];
+static size_t textLen;
+static Count count[ALPHABET_LENGHT];
 
 static const double english[ALPHABET_LENGHT] = {
 	.08167, .01492, .02782, .04253, .12702, .02228, .02015, .06094, .06966,
@@ -50,11 +48,15 @@ static const char trigrams[NUM_TRIGRAMS][4] = {
 	"NDE", "HAS", "NCE", "EDT", "TIS", "OFT", "STH", "MEN"
 };
 
+static char isDigram[ALPHABET_LENGHT][ALPHABET_LENGHT];
+static char isTrigram[ALPHABET_LENGHT][ALPHABET_LENGHT][ALPHABET_LENGHT];
+
 int normalize(char c);
-void readLettersStdin(Counts *cnt, int temp_file);
-Score score(const Counts *cnt, int key);
-void writeDecrypted(int temp_file, int key);
-void printCandidate(int key, const Score *s);
+void buildTables(void);
+void decryptStdin(void);
+void finish(void);
+void writeDecrypted(int key);
+void printCandidate(int key);
 
 int
 normalize(char c)
@@ -63,53 +65,74 @@ normalize(char c)
 	if (c < FIRST_CHAR || c > LAST_CHAR) {
 		return -1;
 	}
-	return (c - FIRST_CHAR) % ALPHABET_LENGHT;
+	return c - FIRST_CHAR;
 }
 
 void
-readLettersStdin(Counts *cnt, int temp_file)
+buildTables(void)
+{
+	int i;
+
+	for (i = 0; i < NUM_DIGRAMS; i++) {
+		isDigram[digrams[i][0] - FIRST_CHAR][digrams[i][1] -
+						     FIRST_CHAR] = 1;
+	}
+	for (i = 0; i < NUM_TRIGRAMS; i++) {
+		isTrigram[trigrams[i][0] - FIRST_CHAR][trigrams[i][1] -
+						       FIRST_CHAR][trigrams[i][2]
+								   - FIRST_CHAR]
+		    = 1;
+	}
+}
+
+/* Lee stdin y, a la vez, descifra con las 26 claves y cuenta. */
+void
+decryptStdin(void)
 {
 	char buffer[BUFFER_SIZE];
 	ssize_t n;
 	size_t i;
-	int r, prev1 = -1, prev2 = -1;
-	char out;
-	char block[BLOCK_SIZE];
-	size_t blockLen = 0;
+	int r, k, d, d1, d2, prev1 = -1, prev2 = -1;
 
 	while ((n = read(STDIN_FILENO, buffer, sizeof(buffer))) > 0) {
 		for (i = 0; i < (size_t)n; i++) {
+			if (textLen == MAX_TEXT) {
+				fprintf(stderr, "Input too large\n");
+				exit(EXIT_FAILURE);
+			}
 			r = normalize(buffer[i]);
 
-			out = buffer[i];
-			if (r >= 0) {
-				out = r + FIRST_CHAR;
-			}
-			block[blockLen++] = out;
-			if (blockLen == BLOCK_SIZE) {
-				if (write(temp_file, block, blockLen) == -1) {
-					fprintf(stderr,
-						"Error while writing temporary file\n");
-					exit(EXIT_FAILURE);
-				}
-				blockLen = 0;
-			}
-
 			if (r < 0) {
+				for (k = 0; k < ALPHABET_LENGHT; k++) {
+					text[k][textLen] = buffer[i];
+				}
+				textLen++;
 				if (isspace((unsigned char)buffer[i])) {
 					prev1 = prev2 = -1;
 				}
 				continue;
 			}
 
-			cnt->len++;
-			cnt->c1[r]++;	// Sumamos 1 a esa letra
-			if (prev1 >= 0) {
-				cnt->c2[prev1][r]++;	// Sumamos 1 a ese binomio
+			for (k = 0; k < ALPHABET_LENGHT; k++) {
+				d = (r - k + ALPHABET_LENGHT) % ALPHABET_LENGHT;
+				text[k][textLen] = d + FIRST_CHAR;
+
+				count[k].len++;
+				count[k].freq[d]++;
+				if (prev1 >= 0) {
+					d1 = (prev1 - k + ALPHABET_LENGHT) %
+					    ALPHABET_LENGHT;
+					count[k].dig += isDigram[d1][d];
+					if (prev2 >= 0) {
+						d2 = (prev2 - k +
+						      ALPHABET_LENGHT) %
+						    ALPHABET_LENGHT;
+						count[k].tri +=
+						    isTrigram[d2][d1][d];
+					}
+				}
 			}
-			if (prev2 >= 0 && prev1 >= 0) {
-				cnt->c3[prev2][prev1][r]++;	// Sumamos 1 a ese trinomio
-			}
+			textLen++;
 			prev2 = prev1;
 			prev1 = r;
 		}
@@ -119,90 +142,45 @@ readLettersStdin(Counts *cnt, int temp_file)
 		fprintf(stderr, "Error while reading STDIN\n");
 		exit(EXIT_FAILURE);
 	}
-
-	if (blockLen > 0) {
-		if (write(temp_file, block, blockLen) == -1) {
-			fprintf(stderr, "Error while writing temporary file\n");
-			exit(EXIT_FAILURE);
-		}
-	}
 }
 
-Score
-score(const Counts *cnt, int key)
+/* Distancia euclídea de las frecuencias de cada clave al inglés. */
+void
+finish(void)
 {
-	Score s;
-	double sum = 0, freq, diff;
-	int i, pos1, pos2, pos3;
+	int k, i;
+	double sum, freq, diff;
 
-	for (i = 0; i < ALPHABET_LENGHT; i++) {
-		freq = 0;
-		if (cnt->len > 0) {
-			freq =
-			    (double)cnt->c1[(i + key) % ALPHABET_LENGHT] /
-			    cnt->len;
+	for (k = 0; k < ALPHABET_LENGHT; k++) {
+		sum = 0;
+		for (i = 0; i < ALPHABET_LENGHT; i++) {
+			freq = 0;
+			if (count[k].len > 0) {
+				freq = (double)count[k].freq[i] / count[k].len;
+			}
+			diff = freq - english[i];
+			sum += diff * diff;
 		}
-		diff = freq - english[i];
-		sum += pow(diff, 2);
+		count[k].dist = sqrt(sum);
 	}
-	s.dist = sqrt(sum);
-
-	s.dig = 0;
-	for (i = 0; i < NUM_DIGRAMS; i++) {
-		pos1 = digrams[i][0] - FIRST_CHAR;
-		pos2 = digrams[i][1] - FIRST_CHAR;
-		s.dig +=
-		    cnt->c2[(pos1 + key) % ALPHABET_LENGHT][(pos2 + key) %
-							    ALPHABET_LENGHT];
-	}
-
-	s.tri = 0;
-	for (i = 0; i < NUM_TRIGRAMS; i++) {
-		pos1 = trigrams[i][0] - FIRST_CHAR;
-		pos2 = trigrams[i][1] - FIRST_CHAR;
-		pos3 = trigrams[i][2] - FIRST_CHAR;
-		s.tri += cnt->c3[(pos1 + key) % ALPHABET_LENGHT]
-		    [(pos2 + key) % ALPHABET_LENGHT]
-		    [(pos3 + key) % ALPHABET_LENGHT];
-	}
-
-	return s;
 }
 
 void
-writeDecrypted(int temp_file, int key)
+writeDecrypted(int key)
 {
-	char name[32], block[BLOCK_SIZE];
-	int fd, c;
-	ssize_t n, i;
+	char name[32];
+	int fd;
 
-	snprintf(name, sizeof(name), "key-%d.txt", key);	// Crea el nombre del archivo
-	fd = open(name, O_WRONLY | O_CREAT | O_TRUNC, 0644);	// Creamos el archivo
+	snprintf(name, sizeof(name), "key-%d.txt", key);
+	fd = open(name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd == -1) {
 		fprintf(stderr, "Error while creating %s\n", name);
 		exit(EXIT_FAILURE);
 	}
+	
 
-	lseek(temp_file, 0, SEEK_SET);
-	while ((n = read(temp_file, block, sizeof(block))) > 0) {
-		for (i = 0; i < n; i++) {
-			c = block[i];
-			if (c >= FIRST_CHAR && c <= LAST_CHAR) {
-				c = (c - FIRST_CHAR - key +
-				     ALPHABET_LENGHT) % ALPHABET_LENGHT +
-				    FIRST_CHAR;
-			}
-			block[i] = c;
-		}
-		if (write(fd, block, n) == -1) {
-			fprintf(stderr, "Error while writing %s\n", name);
-			close(fd);
-			exit(EXIT_FAILURE);
-		}
-	}
-
-	if (n == -1) {
-		fprintf(stderr, "Error while reading temporary file\n");
+	if (write(fd, text[key], textLen) != (ssize_t)textLen) {
+		fprintf(stderr, "Error while writing %s\n", name);
 		close(fd);
 		exit(EXIT_FAILURE);
 	}
@@ -214,41 +192,35 @@ writeDecrypted(int temp_file, int key)
 }
 
 void
-printCandidate(int key, const Score *s)
+printCandidate(int key)
 {
-	printf("%d: %.6f, %lld, %lld\n", key, s[key].dist, s[key].dig,
-	       s[key].tri);
+	printf("%d: %.6f, %lld, %lld\n", key, count[key].dist, count[key].dig,
+	       count[key].tri);
 }
 
 int
 main(int argc, char *argv[])
 {
-	int temp_file = open("temp_file", O_RDWR | O_CREAT | O_TRUNC, 0644);
-	Score s[ALPHABET_LENGHT];
 	double bestDist = 1e9;
 	long long bestDig = -1, bestTri = -1;
 	int kDist = 0, kDig = 0, kTri = 0;
 	int cand[3], ncand = 0, i, k;
 
-	if (temp_file == -1) {
-		fprintf(stderr, "Error while creating temporary file\n");
-		exit(EXIT_FAILURE);
-	}
-
-	readLettersStdin(&counts, temp_file);
+	buildTables();
+	decryptStdin();
+	finish();
 
 	for (k = 1; k < ALPHABET_LENGHT; k++) {
-		s[k] = score(&counts, k);
-		if (s[k].dist < bestDist) {
-			bestDist = s[k].dist;
+		if (count[k].dist < bestDist) {
+			bestDist = count[k].dist;
 			kDist = k;
 		}
-		if (s[k].dig > bestDig) {
-			bestDig = s[k].dig;
+		if (count[k].dig > bestDig) {
+			bestDig = count[k].dig;
 			kDig = k;
 		}
-		if (s[k].tri > bestTri) {
-			bestTri = s[k].tri;
+		if (count[k].tri > bestTri) {
+			bestTri = count[k].tri;
 			kTri = k;
 		}
 	}
@@ -271,11 +243,9 @@ main(int argc, char *argv[])
 	}
 
 	for (i = 0; i < ncand; i++) {
-		printCandidate(cand[i], s);
-		writeDecrypted(temp_file, cand[i]);
+		printCandidate(cand[i]);
+		writeDecrypted(cand[i]);
 	}
-
-	close(temp_file);
 
 	exit(EXIT_SUCCESS);
 }
