@@ -15,7 +15,6 @@ enum {
 	BUFFER_SIZE = 8192
 };
 
-/* Resultados de descifrar con una clave concreta. */
 struct Count {
 	long long len;
 	long long freq[ALPHABET_LENGHT];
@@ -26,7 +25,6 @@ struct Count {
 
 typedef struct Count Count;
 
-/* Un texto descifrado por clave (26 x 32 MB). */
 static char text[ALPHABET_LENGHT][MAX_TEXT];
 static size_t textLen;
 static Count count[ALPHABET_LENGHT];
@@ -74,14 +72,10 @@ buildTables(void)
 	int i;
 
 	for (i = 0; i < NUM_DIGRAMS; i++) {
-		isDigram[digrams[i][0] - FIRST_CHAR][digrams[i][1] -
-						     FIRST_CHAR] = 1;
+		isDigram[digrams[i][0] - FIRST_CHAR][digrams[i][1] - FIRST_CHAR] = 1;
 	}
 	for (i = 0; i < NUM_TRIGRAMS; i++) {
-		isTrigram[trigrams[i][0] - FIRST_CHAR][trigrams[i][1] -
-						       FIRST_CHAR][trigrams[i][2]
-								   - FIRST_CHAR]
-		    = 1;
+		isTrigram[trigrams[i][0] - FIRST_CHAR][trigrams[i][1] - FIRST_CHAR][trigrams[i][2]  - FIRST_CHAR] = 1;
 	}
 }
 
@@ -114,21 +108,19 @@ decryptStdin(void)
 			}
 
 			for (k = 0; k < ALPHABET_LENGHT; k++) {
-				d = (r - k + ALPHABET_LENGHT) % ALPHABET_LENGHT;
-				text[k][textLen] = d + FIRST_CHAR;
 
+				d = (r - k + ALPHABET_LENGHT) % ALPHABET_LENGHT;
+
+				text[k][textLen] = d + FIRST_CHAR;
 				count[k].len++;
 				count[k].freq[d]++;
+				
 				if (prev1 >= 0) {
-					d1 = (prev1 - k + ALPHABET_LENGHT) %
-					    ALPHABET_LENGHT;
+					d1 = (prev1 - k + ALPHABET_LENGHT) % ALPHABET_LENGHT;
 					count[k].dig += isDigram[d1][d];
 					if (prev2 >= 0) {
-						d2 = (prev2 - k +
-						      ALPHABET_LENGHT) %
-						    ALPHABET_LENGHT;
-						count[k].tri +=
-						    isTrigram[d2][d1][d];
+						d2 = (prev2 - k + ALPHABET_LENGHT) % ALPHABET_LENGHT;
+						count[k].tri += isTrigram[d2][d1][d];
 					}
 				}
 			}
@@ -177,7 +169,6 @@ writeDecrypted(int key)
 		fprintf(stderr, "Error while creating %s\n", name);
 		exit(EXIT_FAILURE);
 	}
-	
 
 	if (write(fd, text[key], textLen) != (ssize_t)textLen) {
 		fprintf(stderr, "Error while writing %s\n", name);
@@ -201,10 +192,17 @@ printCandidate(int key)
 int
 main(int argc, char *argv[])
 {
-	double bestDist = 1e9;
-	long long bestDig = -1, bestTri = -1;
-	int kDist = 0, kDig = 0, kTri = 0;
-	int cand[3], ncand = 0, i, k;
+	double bestDist;
+	long long bestDig, bestTri;
+	int kDist, kDig, kTri, cand[3], ncand, i, k;
+
+	bestDist = 1000000000.0;
+	bestDig = -1;
+	bestTri = -1;
+	kDist = 0;
+	kDig = 0;
+	kTri = 0;
+	ncand = 0;
 
 	buildTables();
 	decryptStdin();

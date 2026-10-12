@@ -32,7 +32,8 @@ usage(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	return (int)key;
+	/* Clave en [0, ALPHABET_LENGHT): admite claves negativas o mayores que 26. */
+	return (int)(((key % ALPHABET_LENGHT) + ALPHABET_LENGHT) % ALPHABET_LENGHT);
 }
 
 int
@@ -42,7 +43,7 @@ normalize(char c, int key)
 	if (c < FIRST_CHAR || c > LAST_CHAR) {
 		return -1;
 	}
-	return (c - FIRST_CHAR) % ALPHABET_LENGHT + key;
+	return c - FIRST_CHAR + key;
 }
 
 int
