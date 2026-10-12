@@ -18,5 +18,4 @@ Romper:
 
   ./breakcaesar < texto_cifrado.txt
 
-Por cada candidato se escribe "clave: distancia, digramas, trigramas" y se
-crea un fichero key-<clave>.txt con el texto descifrado.
+
